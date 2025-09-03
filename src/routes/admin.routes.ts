@@ -5,7 +5,7 @@ import { requireAuth } from "../middleware/auth";
 const router = Router();
 
 // Example admin-only endpoint
-router.get("/data", requireAuth(["admin"]), (req, res) => {
+router.get("/data", requireAuth(["admin"]), (_req, res) => {
   res.json({ secret: "admin only data" });
 });
 

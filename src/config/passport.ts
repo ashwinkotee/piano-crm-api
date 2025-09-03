@@ -1,10 +1,10 @@
 import passport from "passport";
-import { Strategy as GoogleStrategy, Profile } from "passport-google-oauth20";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import User from "../models/User";
 import Account from "../models/Account";
 
-passport.serializeUser((user: any, done) => done(null, user._id));
-passport.deserializeUser(async (id: string, done) => {
+passport.serializeUser((user: any, done: (err: any, id?: any) => void) => done(null, (user as any)._id));
+passport.deserializeUser(async (id: string, done: (err: any, user?: any) => void) => {
   const user = await User.findById(id);
   done(null, user);
 });
@@ -16,7 +16,7 @@ passport.use(
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       callbackURL: process.env.GOOGLE_CALLBACK_URL!,
     },
-    async (_at, _rt, profile: Profile, done) => {
+    async (_at: string, _rt: string, profile: any, done: (err: any, user?: any) => void) => {
       const email = profile.emails?.[0]?.value?.toLowerCase();
       if (!email) return done(new Error("No email from Google"));
       let account = await Account.findOne({ provider: "google", providerId: profile.id });

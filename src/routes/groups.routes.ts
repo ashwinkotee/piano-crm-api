@@ -37,7 +37,10 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
     { $set: { name, description, memberIds: memberIds.map((id) => new Types.ObjectId(id)) } },
     { new: true }
   );
-  if (!doc) return res.status(404).json({ error: "Not found" });
+  if (!doc) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
   res.json(doc);
 });
 
@@ -50,7 +53,10 @@ r.post("/:id/add-members", requireAuth(["admin"]), async (req, res) => {
     { $addToSet: { memberIds: { $each: memberIds.map((id) => new Types.ObjectId(id)) } } },
     { new: true }
   );
-  if (!doc) return res.status(404).json({ error: "Not found" });
+  if (!doc) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
   res.json(doc);
 });
 
@@ -64,8 +70,14 @@ r.post("/:id/schedule", requireAuth(["admin"]), async (req, res) => {
   const { dates, durationMinutes, notes } = schema.parse(req.body);
 
   const group = await Group.findById(req.params.id).lean();
-  if (!group) return res.status(404).json({ error: "Group not found" });
-  if (!group.memberIds || group.memberIds.length === 0) return res.status(400).json({ error: "Group has no members" });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  if (!group.memberIds || group.memberIds.length === 0) {
+    res.status(400).json({ error: "Group has no members" });
+    return;
+  }
 
   let created = 0;
   for (const iso of dates) {

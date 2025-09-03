@@ -17,10 +17,16 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = LoginSchema.parse(req.body);
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    if (!user) {
+      res.status(401).json({ error: "Invalid credentials" });
+      return;
+    }
 
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+    if (!ok) {
+      res.status(401).json({ error: "Invalid credentials" });
+      return;
+    }
 
     const secret = process.env.JWT_SECRET || "dev_secret_change_me";
     const token = jwt.sign({ sub: String(user._id), role: user.role }, secret, { expiresIn: JWT_EXPIRES_IN });
@@ -42,8 +48,11 @@ router.post("/login", async (req, res) => {
 router.get("/me", requireAuth(["admin", "portal"]), async (req: any, res) => {
   try {
     const user = await User.findById(req.user.sub);
-    if (!user) return res.status(404).json({ error: "User not found" });
-    return res.json({
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    res.json({
       _id: user._id,
       email: user.email,
       role: user.role,
@@ -67,13 +76,22 @@ router.post("/change-password", requireAuth(["admin", "portal"]), async (req: an
 
     const userId = req.user?.sub || req.user?._id;
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
 
     // If the user is flagged to change temp password, skip current password check
     if (!user.mustChangePassword) {
-      if (!currentPassword) return res.status(400).json({ error: "Current password is required" });
+      if (!currentPassword) {
+        res.status(400).json({ error: "Current password is required" });
+        return;
+      }
       const ok = await bcrypt.compare(currentPassword, user.passwordHash);
-      if (!ok) return res.status(400).json({ error: "Current password is incorrect" });
+      if (!ok) {
+        res.status(400).json({ error: "Current password is incorrect" });
+        return;
+      }
     }
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);

@@ -13,7 +13,8 @@ r.get("/", requireAuth(["admin", "portal"]), async (req: any, res) => {
     const view = (req.query.view as "week" | "month") || "month";
     const startStr = String(req.query.start || "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr)) {
-      return res.status(400).json({ error: "start must be YYYY-MM-DD" });
+      res.status(400).json({ error: "start must be YYYY-MM-DD" });
+      return;
     }
     const [y, m, d] = startStr.split("-").map(Number);
     const from = new Date(y, m - 1, d);
@@ -29,7 +30,10 @@ r.get("/", requireAuth(["admin", "portal"]), async (req: any, res) => {
       if (Types.ObjectId.isValid(idStr)) portalIds.push(new Types.ObjectId(idStr));
 
       const myStudents = await Student.find({ userId: { $in: portalIds } }, { _id: 1 }).lean();
-      if (!myStudents.length) return res.json([]);
+      if (!myStudents.length) {
+        res.json([]);
+        return;
+      }
       q.studentId = { $in: myStudents.map((s) => s._id) };
     }
 
@@ -76,9 +80,12 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
     if (req.body.status) update.status = req.body.status;
     if (req.body.notes !== undefined) update.notes = req.body.notes;
 
-    const doc = await Lesson.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
-    if (!doc) return res.status(404).json({ error: "Not found" });
-    res.json(doc);
+  const doc = await Lesson.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
+  if (!doc) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  res.json(doc);
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }
@@ -87,9 +94,12 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
 /** DELETE /lessons/:id  (admin) */
 r.delete("/:id", requireAuth(["admin"]), async (req, res) => {
   try {
-    const doc = await Lesson.findByIdAndDelete(req.params.id);
-    if (!doc) return res.status(404).json({ error: "Not found" });
-    res.json({ ok: true });
+  const doc = await Lesson.findByIdAndDelete(req.params.id);
+  if (!doc) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  res.json({ ok: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }

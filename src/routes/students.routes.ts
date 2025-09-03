@@ -49,7 +49,10 @@ r.post("/", requireAuth(["admin"]), async (req, res) => {
     const { name, email, program, ageGroup, monthlyFee, defaultSlot } = CreateStudentSchema.parse(req.body);
 
     const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(409).json({ error: "A portal user with this email already exists" });
+    if (existing) {
+      res.status(409).json({ error: "A portal user with this email already exists" });
+      return;
+    }
 
     // Use local-part of email as temporary password (text before @)
     const localPart = email.split("@")[0] || "temp12345";
@@ -93,7 +96,10 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
   try {
     const update = UpdateStudentSchema.parse(req.body);
     const doc = await Student.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
-    if (!doc) return res.status(404).json({ error: "Not found" });
+    if (!doc) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(doc);
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
