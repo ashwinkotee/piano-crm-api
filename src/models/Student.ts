@@ -5,6 +5,10 @@ export type AgeGroup = "6-9" | "10-14" | "15+";
 
 export interface StudentDoc extends Document {
   name: string;
+  address?: string;
+  dateOfBirth?: Date;
+  parentName?: string;
+  parentPhone?: string;
   program: Program;
   ageGroup?: AgeGroup;
   monthlyFee: number;
@@ -23,6 +27,10 @@ export interface StudentDoc extends Document {
 const StudentSchema = new Schema<StudentDoc>(
   {
     name: { type: String, required: true, trim: true },
+    address: { type: String },
+    dateOfBirth: { type: Date },
+    parentName: { type: String },
+    parentPhone: { type: String },
     program: { type: String, enum: ["One-on-one", "Group"], required: true },
     ageGroup: { type: String, enum: ["6-9", "10-14", "15+"] },
     monthlyFee: { type: Number, default: 0 },

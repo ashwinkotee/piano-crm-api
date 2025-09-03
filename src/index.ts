@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth.routes";
 import studentsRoutes from "./routes/students.routes";
 import lessonsRoutes from "./routes/lessons.routes";
 import groupsRoutes from "./routes/groups.routes";
+import homeworkRoutes from "./routes/homework.routes";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use("/auth", authRoutes);
 app.use("/students", studentsRoutes);
 app.use("/lessons", lessonsRoutes);
 app.use("/groups", groupsRoutes);
+app.use("/", homeworkRoutes);
 
 // Requests feature deferred
 // import requestsRoutes from "./routes/requests.routes";
