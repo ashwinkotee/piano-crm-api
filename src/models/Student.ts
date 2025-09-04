@@ -13,8 +13,11 @@ export interface StudentDoc extends Document {
   ageGroup?: AgeGroup;
   monthlyFee: number;
   active: boolean;
-  // 🔗 link to portal user
+  // ?? link to portal user
   userId: Types.ObjectId;
+  // Terms & Conditions acceptance
+  termsAccepted?: boolean;
+  termsAcceptedAt?: Date;
   // default weekly slot for month generation
   defaultSlot?: {
     weekday: number; // 0=Sun..6=Sat
@@ -36,6 +39,8 @@ const StudentSchema = new Schema<StudentDoc>(
     monthlyFee: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    termsAccepted: { type: Boolean, default: false },
+    termsAcceptedAt: { type: Date },
     defaultSlot: {
       weekday: { type: Number, min: 0, max: 6 },
       time: { type: String }, // "HH:mm"
@@ -45,3 +50,4 @@ const StudentSchema = new Schema<StudentDoc>(
 );
 
 export default model<StudentDoc>("Student", StudentSchema);
+

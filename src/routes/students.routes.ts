@@ -100,6 +100,8 @@ r.post("/", requireAuth(["admin"]), async (req, res) => {
       monthlyFee: student.monthlyFee,
       active: student.active,
       userId: student.userId,
+      termsAccepted: student.termsAccepted,
+      termsAcceptedAt: student.termsAcceptedAt,
       portalUser: { _id: portalUser._id, email: portalUser.email },
       tempPassword,
     });
@@ -150,6 +152,18 @@ r.get("/me/list", requireAuth(["portal"]), async (req: any, res) => {
     const userId = new Types.ObjectId(String(req.user.sub || req.user._id));
     const items = await Student.find({ userId }).sort({ name: 1 }).lean();
     res.json(items);
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Bad request" });
+  }
+});
+
+// Portal: accept Terms & Conditions for all my linked students
+r.post("/me/accept-terms", requireAuth(["portal"]), async (req: any, res) => {
+  try {
+    const userId = new Types.ObjectId(String(req.user.sub || req.user._id));
+    const when = new Date();
+    const result = await Student.updateMany({ userId }, { $set: { termsAccepted: true, termsAcceptedAt: when } });
+    res.json({ updated: result.modifiedCount ?? 0, at: when });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }
