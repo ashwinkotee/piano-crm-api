@@ -130,7 +130,15 @@ r.get("/:id", requireAuth(["admin"]), async (req, res) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    res.json(doc);
+
+    // Also include the linked portal user's email for display in the admin UI
+    let portalUser: { _id?: string; email?: string } | undefined = undefined;
+    try {
+      const u = await User.findById(doc.userId).lean();
+      if (u) portalUser = { _id: String(u._id), email: u.email };
+    } catch {}
+
+    res.json({ ...doc, portalUser });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }
