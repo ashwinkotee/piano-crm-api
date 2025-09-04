@@ -103,5 +103,19 @@ r.post("/:id/schedule", requireAuth(["admin"]), async (req, res) => {
   res.json({ ok: true, created });
 });
 
+// Soft delete a group
+r.delete("/:id", requireAuth(["admin"]), async (req, res) => {
+  const doc = await Group.findByIdAndUpdate(
+    req.params.id,
+    { $set: { active: false } },
+    { new: true }
+  );
+  if (!doc) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 export default r;
 
