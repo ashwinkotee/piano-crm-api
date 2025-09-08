@@ -27,11 +27,19 @@ r.post("/", requireAuth(["admin"]), async (req, res) => {
     description,
     memberIds: memberIds.map((id) => new Types.ObjectId(id)),
   });
-  res.json(doc);
+  res.json({ group: doc, meta: { createdLessons: 0, removedLessons: 0, addedMembers: memberIds.length, removedMembers: 0 } });
 });
 
 r.put("/:id", requireAuth(["admin"]), async (req, res) => {
   const { name, description, memberIds } = UpsertSchema.parse(req.body);
+
+  // Get current members to compute diffs
+  const before = await Group.findById(req.params.id).lean();
+  if (!before) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const doc = await Group.findByIdAndUpdate(
     req.params.id,
     { $set: { name, description, memberIds: memberIds.map((id) => new Types.ObjectId(id)) } },
@@ -41,13 +49,103 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  res.json(doc);
+
+  // Compute added and removed members
+  const prevSet = new Set((before.memberIds || []).map((x: any) => String(x)));
+  const nextSet = new Set((doc.memberIds || []).map((x: any) => String(x)));
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const id of nextSet) if (!prevSet.has(id)) added.push(id);
+  for (const id of prevSet) if (!nextSet.has(id)) removed.push(id);
+
+  const now = new Date();
+
+  // If members were added: clone upcoming group lessons for the group
+  let createdCount = 0;
+  if (added.length > 0) {
+    try {
+      const upcoming = await Lesson.find({
+        groupId: doc._id as any,
+        type: "group",
+        status: "Scheduled",
+        start: { $gte: now },
+      }).lean();
+
+      if (upcoming.length > 0) {
+        const uniq = new Map<string, { start: Date; end: Date; notes?: string }>();
+        for (const l of upcoming) {
+          const key = `${new Date(l.start).getTime()}_${new Date(l.end).getTime()}_${l.notes || ""}`;
+          if (!uniq.has(key)) uniq.set(key, { start: new Date(l.start), end: new Date(l.end), notes: l.notes });
+        }
+        for (const sid of added) {
+          for (const { start, end, notes } of uniq.values()) {
+            const exists = await Lesson.findOne({
+              studentId: new Types.ObjectId(sid),
+              groupId: doc._id as any,
+              type: "group",
+              start,
+              end,
+              status: "Scheduled",
+            }).lean();
+            if (exists) continue;
+            await Lesson.create({
+              studentId: new Types.ObjectId(sid),
+              groupId: doc._id as any,
+              type: "group",
+              start,
+              end,
+              status: "Scheduled",
+              notes,
+            });
+            createdCount++;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to clone lessons for added members:", e);
+    }
+  }
+
+  // If members were removed: delete their upcoming scheduled group lessons
+  let removedCount = 0;
+  if (removed.length > 0) {
+    try {
+      const result: any = await Lesson.deleteMany({
+        studentId: { $in: removed.map((id) => new Types.ObjectId(id)) },
+        groupId: doc._id as any,
+        type: "group",
+        status: "Scheduled",
+        start: { $gte: now },
+      });
+      removedCount = result?.deletedCount || 0;
+    } catch (e) {
+      console.error("Failed to remove lessons for removed members:", e);
+    }
+  }
+
+  res.json({
+    group: doc,
+    meta: {
+      createdLessons: createdCount,
+      removedLessons: removedCount,
+      addedMembers: added.length,
+      removedMembers: removed.length,
+    },
+  });
 });
 
 // Add members
 r.post("/:id/add-members", requireAuth(["admin"]), async (req, res) => {
   const schema = z.object({ memberIds: z.array(z.string()).min(1) });
   const { memberIds } = schema.parse(req.body);
+
+  // Capture members before update to determine which are new
+  const before = await Group.findById(req.params.id, { memberIds: 1 }).lean();
+  if (!before) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const doc = await Group.findByIdAndUpdate(
     req.params.id,
     { $addToSet: { memberIds: { $each: memberIds.map((id) => new Types.ObjectId(id)) } } },
@@ -57,7 +155,58 @@ r.post("/:id/add-members", requireAuth(["admin"]), async (req, res) => {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  res.json(doc);
+
+  let createdCount = 0;
+  try {
+    // Determine newly added member ids (as strings)
+    const beforeSet = new Set((before.memberIds || []).map((x: any) => String(x)));
+    const newlyAdded = memberIds.filter((id) => !beforeSet.has(String(id)));
+
+    if (newlyAdded.length > 0) {
+      // Find upcoming scheduled group lessons (for any member) for this group
+      const now = new Date();
+      const existing = await Lesson.find({
+        groupId: doc._id as any,
+        type: "group",
+        status: "Scheduled",
+        start: { $gte: now },
+      }).lean();
+
+      if (existing.length > 0) {
+        // Deduplicate by start/end/notes to get the schedule instances
+        const uniq = new Map<string, { start: Date; end: Date; notes?: string }>();
+        for (const l of existing) {
+          const key = `${new Date(l.start).getTime()}_${new Date(l.end).getTime()}_${l.notes || ""}`;
+          if (!uniq.has(key)) uniq.set(key, { start: new Date(l.start), end: new Date(l.end), notes: l.notes });
+        }
+
+        for (const sid of newlyAdded) {
+          for (const { start, end, notes } of uniq.values()) {
+            try {
+              await Lesson.create({
+                studentId: new Types.ObjectId(sid),
+                groupId: doc._id as any,
+                type: "group",
+                start,
+                end,
+                status: "Scheduled",
+                notes,
+              });
+              createdCount++;
+            } catch (e: any) {
+              // Ignore duplicate key errors if unique indexes exist
+              if (e?.code !== 11000) throw e;
+            }
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    console.error("Error creating lessons for new group members:", e);
+    // non-fatal: membership change succeeded even if lesson cloning had issues
+  }
+
+  res.json({ group: doc, meta: { createdLessons: createdCount, removedLessons: 0, addedMembers: newlyAdded.length, removedMembers: 0 } });
 });
 
 // Schedule group sessions for given dates (e.g., 2 per month)
