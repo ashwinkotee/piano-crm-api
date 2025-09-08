@@ -110,6 +110,72 @@ r.post("/", requireAuth(["admin"]), async (req, res) => {
   }
 });
 
+/**
+ * Create a sibling student under the same portal account as the base student
+ * POST /students/:id/siblings (admin)
+ */
+r.post("/:id/siblings", requireAuth(["admin"]), async (req, res) => {
+  try {
+    const BaseSchema = z.object({
+      name: z.string().min(1),
+      address: z.string().min(1).optional(),
+      dateOfBirth: z.string().datetime().optional(),
+      parentName: z.string().min(1).optional(),
+      parentPhone: z.string().min(1).optional(),
+      program: z.enum(["One-on-one", "Group"]),
+      ageGroup: z.enum(["6-9", "10-14", "15+"]).optional(),
+      monthlyFee: z.number().optional(),
+      defaultSlot: z.object({
+        weekday: z.number().min(0).max(6),
+        time: z.string().regex(/^\d{2}:\d{2}$/),
+      }).optional(),
+    });
+    const payload = BaseSchema.parse(req.body);
+
+    const base = await Student.findById(req.params.id);
+    if (!base) {
+      res.status(404).json({ error: "Base student not found" });
+      return;
+    }
+
+    // If any student under this account has accepted terms, propagate that to the new sibling
+    const accepted = base.termsAccepted ? base : await Student.findOne({ userId: base.userId, termsAccepted: true }).lean();
+
+    const doc = await Student.create({
+      name: payload.name,
+      address: payload.address,
+      dateOfBirth: payload.dateOfBirth ? new Date(payload.dateOfBirth) : undefined,
+      parentName: payload.parentName ?? base.parentName,
+      parentPhone: payload.parentPhone ?? base.parentPhone,
+      program: payload.program,
+      ageGroup: payload.ageGroup,
+      monthlyFee: payload.monthlyFee ?? base.monthlyFee ?? 0,
+      userId: base.userId, // link to same portal account
+      defaultSlot: payload.defaultSlot,
+      termsAccepted: !!accepted,
+      termsAcceptedAt: accepted ? (accepted as any).termsAcceptedAt || new Date() : undefined,
+    });
+
+    res.json({
+      _id: doc._id,
+      name: doc.name,
+      address: doc.address,
+      dateOfBirth: doc.dateOfBirth,
+      parentName: doc.parentName,
+      parentPhone: doc.parentPhone,
+      program: doc.program,
+      ageGroup: doc.ageGroup,
+      monthlyFee: doc.monthlyFee,
+      active: doc.active,
+      userId: doc.userId,
+      termsAccepted: doc.termsAccepted,
+      termsAcceptedAt: doc.termsAcceptedAt,
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Bad request" });
+  }
+});
+
 r.put("/:id", requireAuth(["admin"]), async (req, res) => {
   try {
     const update = UpdateStudentSchema.parse(req.body);

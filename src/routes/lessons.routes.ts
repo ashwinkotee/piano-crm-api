@@ -7,7 +7,7 @@ import { requireAuth } from "../middleware/auth";
 
 const r = Router();
 
-/** GET /lessons?view=month|week&start=YYYY-MM-DD */
+/** GET /lessons?view=month|week&start=YYYY-MM-DD[&studentId=...] */
 r.get("/", requireAuth(["admin", "portal"]), async (req: any, res) => {
   try {
     const view = (req.query.view as "week" | "month") || "month";
@@ -21,6 +21,7 @@ r.get("/", requireAuth(["admin", "portal"]), async (req: any, res) => {
     const to = view === "week" ? new Date(y, m - 1, d + 7) : new Date(y, m, 1);
 
     const q: any = { start: { $gte: from, $lt: to } };
+    const requestedStudentId = String(req.query.studentId || "").trim();
 
     // Portal users see only their own students' lessons
     if (req.user.role !== "admin") {
@@ -30,11 +31,20 @@ r.get("/", requireAuth(["admin", "portal"]), async (req: any, res) => {
       if (Types.ObjectId.isValid(idStr)) portalIds.push(new Types.ObjectId(idStr));
 
       const myStudents = await Student.find({ userId: { $in: portalIds } }, { _id: 1 }).lean();
-      if (!myStudents.length) {
-        res.json([]);
-        return;
+      if (!myStudents.length) { res.json([]); return; }
+
+      if (requestedStudentId) {
+        if (!Types.ObjectId.isValid(requestedStudentId)) { res.status(400).json({ error: "Invalid studentId" }); return; }
+        const isMine = myStudents.some(s => String(s._id) === requestedStudentId);
+        if (!isMine) { res.status(403).json({ error: "Forbidden" }); return; }
+        q.studentId = new Types.ObjectId(requestedStudentId);
+      } else {
+        q.studentId = { $in: myStudents.map((s) => s._id) };
       }
-      q.studentId = { $in: myStudents.map((s) => s._id) };
+    } else if (requestedStudentId) {
+      // Admin can optionally filter by studentId
+      if (!Types.ObjectId.isValid(requestedStudentId)) { res.status(400).json({ error: "Invalid studentId" }); return; }
+      q.studentId = new Types.ObjectId(requestedStudentId);
     }
 
     const items = await Lesson.find(q).sort({ start: 1 }).lean();

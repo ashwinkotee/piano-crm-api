@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "ts-node-dev src/seed/seed.ts",
+    "backfill:terms": "ts-node-dev src/seed/backfill-terms.ts",
     "typecheck": "tsc --noEmit",
     "deadcode": "knip --reporter compact",
     "prune": "ts-prune",
