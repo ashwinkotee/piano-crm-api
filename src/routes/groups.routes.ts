@@ -157,10 +157,11 @@ r.post("/:id/add-members", requireAuth(["admin"]), async (req, res) => {
   }
 
   let createdCount = 0;
+  let newlyAdded: string[] = [];
   try {
     // Determine newly added member ids (as strings)
     const beforeSet = new Set((before.memberIds || []).map((x: any) => String(x)));
-    const newlyAdded = memberIds.filter((id) => !beforeSet.has(String(id)));
+    newlyAdded = memberIds.filter((id) => !beforeSet.has(String(id)));
 
     if (newlyAdded.length > 0) {
       // Find upcoming scheduled group lessons (for any member) for this group
