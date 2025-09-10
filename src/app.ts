@@ -12,19 +12,45 @@ import homeworkRoutes from "./routes/homework.routes";
 
 // Build CORS allowlist from env (CLIENT_URL or ALLOWED_ORIGINS)
 function buildCors() {
+  const normalize = (value: string) => {
+    try {
+      const url = new URL(value);
+      // Return e.g. http://localhost:5173 (no trailing slash)
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      return value.replace(/\/$/, "");
+    }
+  };
+
   const envList = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(normalize);
   const client = process.env.CLIENT_URL?.trim();
-  const allowlist = new Set<string>([...envList, ...(client ? [client] : [])]);
+  const allowlist = new Set<string>([...envList, ...(client ? [normalize(client)] : [])]);
+
+  const isDev = (process.env.NODE_ENV || "development") !== "production";
+
   return cors({
     origin: function (
       origin: string | undefined,
       cb: (err: Error | null, allow?: boolean) => void
     ) {
-      // Allow same-origin/LAN tools (no origin) and explicit allowlist
-      if (!origin || allowlist.has(origin)) return cb(null, true);
+      if (!origin) return cb(null, true); // same-origin or tools without Origin header
+      const normalized = normalize(origin);
+      if (allowlist.has(normalized)) return cb(null, true);
+
+      // In dev, allow localhost and 127.0.0.1 on any port
+      if (isDev) {
+        try {
+          const { hostname } = new URL(origin);
+          if (hostname === 'localhost' || hostname === '127.0.0.1') {
+            return cb(null, true);
+          }
+        } catch {}
+      }
+
       return cb(new Error("CORS: origin not allowed"));
     },
     credentials: true,
