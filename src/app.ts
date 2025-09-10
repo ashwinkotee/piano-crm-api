@@ -31,6 +31,7 @@ function buildCors() {
   const allowlist = new Set<string>([...envList, ...(client ? [normalize(client)] : [])]);
 
   const isDev = (process.env.NODE_ENV || "development") !== "production";
+  const shouldLogCors = process.env.CORS_DEBUG === 'true' || isDev;
 
   return cors({
     origin: function (
@@ -51,6 +52,15 @@ function buildCors() {
         } catch {}
       }
 
+      if (shouldLogCors) {
+        try {
+          console.warn("CORS: origin not allowed", {
+            origin,
+            normalized,
+            allowlist: Array.from(allowlist),
+          });
+        } catch {}
+      }
       return cb(new Error("CORS: origin not allowed"));
     },
     credentials: true,

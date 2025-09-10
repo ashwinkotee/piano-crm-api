@@ -14,11 +14,24 @@ function isSecureCookie() {
   try { return (process.env.CLIENT_URL || "").startsWith("https:"); } catch { return false; }
 }
 
+function cookieSameSite(): "strict" | "lax" | "none" {
+  // Allow override via env; default to 'none' in production for cross-site setups
+  const fromEnv = (process.env.COOKIE_SAMESITE || (process.env.NODE_ENV === 'production' ? 'none' : 'strict')).toLowerCase();
+  return (fromEnv === 'none' || fromEnv === 'lax' || fromEnv === 'strict') ? (fromEnv as any) : 'strict';
+}
+
+function cookieSecure(): boolean {
+  const env = process.env.COOKIE_SECURE?.toLowerCase();
+  if (env === 'true') return true;
+  if (env === 'false') return false;
+  return isSecureCookie();
+}
+
 function setRefreshCookie(res: any, token: string) {
   res.cookie("refreshToken", token, {
     httpOnly: true,
-    secure: isSecureCookie(),
-    sameSite: "strict",
+    secure: cookieSecure(),
+    sameSite: cookieSameSite(),
     path: "/auth",
     maxAge: 1000 * 60 * 60 * 24 * 30, // 30d
   });
