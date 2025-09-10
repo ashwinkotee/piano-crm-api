@@ -19,7 +19,7 @@ export function requireAuth(roles?: ("admin" | "portal")[]) {
       (req as any).user = payload;
       next();
     } catch (err) {
-      console.error("JWT verification failed:", err);
+      // Avoid leaking details to clients; log minimal server-side
       res.status(401).json({ error: "Invalid token" });
       return;
     }
