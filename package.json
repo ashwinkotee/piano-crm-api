@@ -21,6 +21,9 @@
   "dependencies": {
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.3.0",
+    "@types/express": "^5.0.3",
+    "@types/express-session": "^1.18.2",
+    "@types/cookie-parser": "^1.4.9",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -40,9 +43,6 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
-    "@types/cookie-parser": "^1.4.9",
-    "@types/express": "^5.0.3",
-    "@types/express-session": "^1.18.2",
     "@types/jest": "^30.0.0",
     "@types/supertest": "^2.0.16",
     "express-list-endpoints": "^7.1.1",
