@@ -122,8 +122,10 @@ router.post("/change-password", requireAuth(["admin", "portal"]), async (req: an
       return;
     }
 
-    // If the user is flagged to change temp password, skip current password check
-    if (!user.mustChangePassword) {
+    // Policy: portal users can change their password without providing the current one.
+    // Admins must provide current password unless flagged to change temp password.
+    const isPortal = req.user?.role === "portal";
+    if (!user.mustChangePassword && !isPortal) {
       if (!currentPassword) {
         res.status(400).json({ error: "Current password is required" });
         return;
