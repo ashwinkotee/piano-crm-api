@@ -73,18 +73,10 @@ export function createApp() {
   // Security headers
   app.use(
     helmet({
-      contentSecurityPolicy: {
-        useDefaults: true,
-        directives: {
-          "default-src": ["'self'"],
-          "base-uri": ["'self'"],
-          "frame-ancestors": ["'none'"],
-          "img-src": ["'self'", "data:"]
-        },
-      },
+      contentSecurityPolicy: false,
       referrerPolicy: { policy: "no-referrer" },
       crossOriginOpenerPolicy: { policy: "same-origin" },
-      crossOriginResourcePolicy: { policy: "same-origin" },
+      crossOriginResourcePolicy: { policy: "cross-origin" },
       hsts: process.env.NODE_ENV === "production" ? undefined : false,
     })
   );
