@@ -58,23 +58,27 @@ r.get("/", requireAuth(["admin", "portal"]), async (req: any, res) => {
 /** POST /lessons  (admin) */
 r.post("/", requireAuth(["admin"]), async (req, res) => {
   try {
-    const schema = z.object({
-      studentId: z.string(),
-      type: z.enum(["one", "group"]),
-      start: z.string(),
-      end: z.string(),
-      notes: z.string().optional(),
-    });
-    const { studentId, type, start, end, notes } = schema.parse(req.body);
+    const common = { start: z.string(), end: z.string(), notes: z.string().optional() } as const;
+    const schema = z.union([
+      z.object({ type: z.literal("demo"), demoName: z.string().min(1), ...common }),
+      z.object({ type: z.enum(["one","group"]), studentId: z.string(), ...common }),
+    ]);
+    const parsed = schema.parse(req.body as any);
 
-    const doc = await Lesson.create({
-      studentId: new Types.ObjectId(studentId),
-      type,
-      start: new Date(start),
-      end: new Date(end),
+    const base: any = {
+      type: parsed.type,
+      start: new Date((parsed as any).start),
+      end: new Date((parsed as any).end),
       status: "Scheduled",
-      notes,
-    });
+      notes: (parsed as any).notes,
+    };
+    if (parsed.type === "demo") {
+      base.demoName = (parsed as any).demoName;
+    } else {
+      base.studentId = new Types.ObjectId((parsed as any).studentId);
+    }
+
+    const doc = await Lesson.create(base);
     res.json(doc);
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });

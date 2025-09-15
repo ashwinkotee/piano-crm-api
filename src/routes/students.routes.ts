@@ -5,6 +5,9 @@ import { Types } from "mongoose";
 import Student from "../models/Student";
 import User from "../models/User";
 import { requireAuth } from "../middleware/auth";
+import Lesson from "../models/Lesson";
+import Homework from "../models/Homework";
+import RefreshToken from "../models/RefreshToken";
 
 const r = Router();
 
@@ -230,6 +233,38 @@ r.post("/me/accept-terms", requireAuth(["portal"]), async (req: any, res) => {
     const when = new Date();
     const result = await Student.updateMany({ userId }, { $set: { termsAccepted: true, termsAcceptedAt: when } });
     res.json({ updated: result.modifiedCount ?? 0, at: when });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Bad request" });
+  }
+});
+
+// Delete student (and portal user if no more students remain)
+r.delete("/:id", requireAuth(["admin"]), async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    if (!student) { res.status(404).json({ error: "Not found" }); return; }
+
+    const userId = student.userId ? new Types.ObjectId(String(student.userId)) : null;
+
+    // Cleanup linked data for this student
+    await Promise.all([
+      Lesson.deleteMany({ studentId: student._id }).catch(()=>{}),
+      Homework.deleteMany({ studentId: student._id }).catch(()=>{}),
+    ]);
+
+    await student.deleteOne();
+
+    if (userId) {
+      const remaining = await Student.countDocuments({ userId });
+      if (remaining === 0) {
+        await Promise.all([
+          RefreshToken.deleteMany({ userId }).catch(()=>{}),
+          User.deleteOne({ _id: userId }).catch(()=>{}),
+        ]);
+      }
+    }
+
+    res.json({ ok: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { requireAuth } from "../middleware/auth";
 import User from "../models/User";
+import Student from "../models/Student";
 import RefreshToken from "../models/RefreshToken";
 import { signAccess, signRefresh, verifyToken } from "../utils/jwt";
 import crypto from "crypto";
@@ -59,6 +60,19 @@ router.post("/login", authLimiter, async (req, res) => {
     if (!ok) {
       res.status(401).json({ error: "Invalid credentials" });
       return;
+    }
+
+    // Portal login checks: block if user inactive or no active students
+    if (user.role === "portal") {
+      if (!user.active) {
+        res.status(403).json({ error: "Account inactive" });
+        return;
+      }
+      const activeStudents = await Student.countDocuments({ userId: user._id, active: true });
+      if (activeStudents === 0) {
+        res.status(403).json({ error: "No active students linked" });
+        return;
+      }
     }
 
     const payload = { sub: String(user._id), role: user.role };
@@ -160,6 +174,12 @@ router.post("/refresh", authLimiter, async (req: any, res) => {
     const decoded: any = verifyToken(cookie);
     const user = await User.findById(decoded.sub).lean();
     if (!user) { res.status(401).json({ error: "Invalid user" }); return; }
+
+    if (user.role === "portal") {
+      if (!user.active) { res.status(403).json({ error: "Account inactive" }); return; }
+      const activeStudents = await (await import("../models/Student")).default.countDocuments({ userId: user._id, active: true });
+      if (activeStudents === 0) { res.status(403).json({ error: "No active students linked" }); return; }
+    }
 
     // Rotate refresh token
     await RefreshToken.deleteOne({ token: cookie }).catch(() => {});
