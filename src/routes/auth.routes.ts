@@ -40,9 +40,17 @@ function setRefreshCookie(res: any, token: string) {
 
 const router = Router();
 
+const RESET_SECURITY_KEY = process.env.PASSWORD_RESET_KEY || "483920";
+
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const ForgotPwSchema = z.object({
+  email: z.string().email(),
+  securityKey: z.string().trim().length(6),
+  newPassword: z.string().min(8),
 });
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
@@ -94,6 +102,28 @@ router.post("/login", authLimiter, async (req, res) => {
         mustChangePassword: !!user.mustChangePassword,
       },
     });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Bad request" });
+  }
+});
+
+router.post("/forgot-password", authLimiter, async (req, res) => {
+  try {
+    const { email, securityKey, newPassword } = ForgotPwSchema.parse(req.body);
+    if (securityKey !== RESET_SECURITY_KEY) {
+      res.status(403).json({ error: "Invalid security key" });
+      return;
+    }
+    const user = await User.findOne({ email: email.toLowerCase(), role: "portal" });
+    if (!user) {
+      res.status(404).json({ error: "Portal user not found" });
+      return;
+    }
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false;
+    await user.save();
+    await RefreshToken.deleteMany({ userId: user._id }).catch(() => {});
+    res.json({ ok: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }
@@ -209,3 +239,10 @@ router.post("/logout", async (req: any, res) => {
 });
 
 export default router;
+
+
+
+
+
+
+
