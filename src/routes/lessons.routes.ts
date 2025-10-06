@@ -88,23 +88,68 @@ r.post("/", requireAuth(["admin"]), async (req, res) => {
 /** PUT /lessons/:id  (admin) */
 r.put("/:id", requireAuth(["admin"]), async (req, res) => {
   try {
+    const before = await Lesson.findById(req.params.id);
+    if (!before) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     const update: any = {};
     if (req.body.start) update.start = new Date(req.body.start);
     if (req.body.end) update.end = new Date(req.body.end);
     if (req.body.status) update.status = req.body.status;
     if (req.body.notes !== undefined) update.notes = req.body.notes;
 
-  const doc = await Lesson.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
-  if (!doc) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  res.json(doc);
+    const doc = await Lesson.findByIdAndUpdate(
+      req.params.id,
+      { $set: update },
+      { new: true, runValidators: true }
+    );
+    if (!doc) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const touchesSharedFields = Boolean(
+      req.body.start || req.body.end || req.body.status || req.body.notes !== undefined
+    );
+
+    if (before.type === "group" && before.groupId && touchesSharedFields) {
+      const sharedUpdate: any = {};
+      if (req.body.start) sharedUpdate.start = new Date(req.body.start);
+      if (req.body.end) sharedUpdate.end = new Date(req.body.end);
+      if (req.body.status) sharedUpdate.status = req.body.status;
+      if (req.body.notes !== undefined) sharedUpdate.notes = req.body.notes;
+
+      if (Object.keys(sharedUpdate).length > 0) {
+        const startValues = [before.start];
+        if (req.body.start) startValues.push(new Date(req.body.start));
+
+        const uniqueStarts = Array.from(
+          new Set(startValues.map((d) => d?.getTime()).filter((ms): ms is number => typeof ms === "number"))
+        ).map((ms) => new Date(ms));
+
+        const siblingMatch: any = {
+          _id: { $ne: doc._id },
+          groupId: before.groupId,
+          type: "group",
+        };
+
+        if (uniqueStarts.length === 1) {
+          siblingMatch.start = uniqueStarts[0];
+        } else if (uniqueStarts.length > 1) {
+          siblingMatch.start = { $in: uniqueStarts };
+        }
+
+        await Lesson.updateMany(siblingMatch, { $set: sharedUpdate });
+      }
+    }
+
+    res.json(doc);
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Bad request" });
   }
 });
-
 /** DELETE /lessons/:id  (admin) */
 r.delete("/:id", requireAuth(["admin"]), async (req, res) => {
   try {
@@ -180,4 +225,7 @@ r.post("/generate-month", requireAuth(["admin"]), async (req, res) => {
 });
 
 export default r;
+
+
+
 
