@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth";
 import Group from "../models/Group";
 import Lesson from "../models/Lesson";
+import { fetchGroupLessonsForGroup } from "../services/groupLessons";
 
 const r = Router();
 
@@ -59,37 +60,40 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
   for (const id of prevSet) if (!nextSet.has(id)) removed.push(id);
 
   const now = new Date();
+  const docMemberIds = (doc.memberIds || []).map((id: any) => new Types.ObjectId(id));
+  const groupContext = { _id: doc._id as any, memberIds: docMemberIds };
 
   // If members were added: clone upcoming group lessons for the group
   let createdCount = 0;
   if (added.length > 0) {
     try {
-      const upcoming = await Lesson.find({
-        groupId: doc._id as any,
-        type: "group",
-        status: "Scheduled",
-        start: { $gte: now },
-      }).lean();
+      const upcoming = await fetchGroupLessonsForGroup({
+        group: groupContext,
+        match: { status: "Scheduled", start: { $gte: now } },
+      });
 
       if (upcoming.length > 0) {
         const uniq = new Map<string, { start: Date; end: Date; notes?: string }>();
         for (const l of upcoming) {
-          const key = `${new Date(l.start).getTime()}_${new Date(l.end).getTime()}_${l.notes || ""}`;
-          if (!uniq.has(key)) uniq.set(key, { start: new Date(l.start), end: new Date(l.end), notes: l.notes });
+          const startDate = new Date(l.start);
+          const endDate = new Date(l.end);
+          const key = `${startDate.getTime()}_${endDate.getTime()}_${l.notes || ""}`;
+          if (!uniq.has(key)) uniq.set(key, { start: startDate, end: endDate, notes: l.notes });
         }
         for (const sid of added) {
+          const studentObjId = new Types.ObjectId(sid);
           for (const { start, end, notes } of uniq.values()) {
             const exists = await Lesson.findOne({
-              studentId: new Types.ObjectId(sid),
-              groupId: doc._id as any,
+              studentId: studentObjId,
               type: "group",
               start,
               end,
               status: "Scheduled",
+              $or: [{ groupId: doc._id as any }, { groupId: { $exists: false } }],
             }).lean();
             if (exists) continue;
             await Lesson.create({
-              studentId: new Types.ObjectId(sid),
+              studentId: studentObjId,
               groupId: doc._id as any,
               type: "group",
               start,
@@ -110,14 +114,19 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
   let removedCount = 0;
   if (removed.length > 0) {
     try {
-      const result: any = await Lesson.deleteMany({
-        studentId: { $in: removed.map((id) => new Types.ObjectId(id)) },
-        groupId: doc._id as any,
-        type: "group",
-        status: "Scheduled",
-        start: { $gte: now },
+      const removedObjIds = removed.map((id) => new Types.ObjectId(id));
+      const upcomingToRemove = await fetchGroupLessonsForGroup({
+        group: groupContext,
+        limitToMembers: removedObjIds,
+        match: { status: "Scheduled", start: { $gte: now } },
       });
-      removedCount = result?.deletedCount || 0;
+      if (upcomingToRemove.length > 0) {
+        const idsToDelete = Array.from(
+          new Map(upcomingToRemove.map((l) => [String(l._id), l._id as any])).values()
+        );
+        const result: any = await Lesson.deleteMany({ _id: { $in: idsToDelete } });
+        removedCount = result?.deletedCount || 0;
+      }
     } catch (e) {
       console.error("Failed to remove lessons for removed members:", e);
     }
@@ -166,38 +175,44 @@ r.post("/:id/add-members", requireAuth(["admin"]), async (req, res) => {
     if (newlyAdded.length > 0) {
       // Find upcoming scheduled group lessons (for any member) for this group
       const now = new Date();
-      const existing = await Lesson.find({
-        groupId: doc._id as any,
-        type: "group",
-        status: "Scheduled",
-        start: { $gte: now },
-      }).lean();
+      const groupMemberIds = (doc.memberIds || []).map((id: any) => new Types.ObjectId(id));
+      const existing = await fetchGroupLessonsForGroup({
+        group: { _id: doc._id as any, memberIds: groupMemberIds },
+        match: { status: "Scheduled", start: { $gte: now } },
+      });
 
       if (existing.length > 0) {
         // Deduplicate by start/end/notes to get the schedule instances
         const uniq = new Map<string, { start: Date; end: Date; notes?: string }>();
         for (const l of existing) {
-          const key = `${new Date(l.start).getTime()}_${new Date(l.end).getTime()}_${l.notes || ""}`;
-          if (!uniq.has(key)) uniq.set(key, { start: new Date(l.start), end: new Date(l.end), notes: l.notes });
+          const startDate = new Date(l.start);
+          const endDate = new Date(l.end);
+          const key = `${startDate.getTime()}_${endDate.getTime()}_${l.notes || ""}`;
+          if (!uniq.has(key)) uniq.set(key, { start: startDate, end: endDate, notes: l.notes });
         }
 
         for (const sid of newlyAdded) {
+          const studentObjId = new Types.ObjectId(sid);
           for (const { start, end, notes } of uniq.values()) {
-            try {
-              await Lesson.create({
-                studentId: new Types.ObjectId(sid),
-                groupId: doc._id as any,
-                type: "group",
-                start,
-                end,
-                status: "Scheduled",
-                notes,
-              });
-              createdCount++;
-            } catch (e: any) {
-              // Ignore duplicate key errors if unique indexes exist
-              if (e?.code !== 11000) throw e;
-            }
+            const exists = await Lesson.findOne({
+              studentId: studentObjId,
+              type: "group",
+              start,
+              end,
+              status: "Scheduled",
+              $or: [{ groupId: doc._id as any }, { groupId: { $exists: false } }],
+            }).lean();
+            if (exists) continue;
+            await Lesson.create({
+              studentId: studentObjId,
+              groupId: doc._id as any,
+              type: "group",
+              start,
+              end,
+              status: "Scheduled",
+              notes,
+            });
+            createdCount++;
           }
         }
       }
@@ -268,4 +283,3 @@ r.delete("/:id", requireAuth(["admin"]), async (req, res) => {
 });
 
 export default r;
-

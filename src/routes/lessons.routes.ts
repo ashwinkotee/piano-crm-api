@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Types } from "mongoose";
 import Lesson from "../models/Lesson";
 import Student from "../models/Student";
+import Group from "../models/Group";
+import { fetchGroupLessonsForGroup } from "../services/groupLessons";
 import { requireAuth } from "../middleware/auth";
 
 const r = Router();
@@ -114,7 +116,7 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
       req.body.start || req.body.end || req.body.status || req.body.notes !== undefined
     );
 
-    if (before.type === "group" && before.groupId && touchesSharedFields) {
+    if (before.type === "group" && touchesSharedFields) {
       const sharedUpdate: any = {};
       if (req.body.start) sharedUpdate.start = new Date(req.body.start);
       if (req.body.end) sharedUpdate.end = new Date(req.body.end);
@@ -129,19 +131,59 @@ r.put("/:id", requireAuth(["admin"]), async (req, res) => {
           new Set(startValues.map((d) => d?.getTime()).filter((ms): ms is number => typeof ms === "number"))
         ).map((ms) => new Date(ms));
 
-        const siblingMatch: any = {
-          _id: { $ne: doc._id },
-          groupId: before.groupId,
-          type: "group",
-        };
+        const startMatch = uniqueStarts.length === 1 ? uniqueStarts[0] : { $in: uniqueStarts };
 
-        if (uniqueStarts.length === 1) {
-          siblingMatch.start = uniqueStarts[0];
-        } else if (uniqueStarts.length > 1) {
-          siblingMatch.start = { $in: uniqueStarts };
+        let effectiveGroupId: Types.ObjectId | null = before.groupId ?? null;
+        let groupMemberIds: Types.ObjectId[] | undefined;
+
+        if (effectiveGroupId) {
+          const groupDoc = await Group.findById(effectiveGroupId, { memberIds: 1, active: 1 }).lean();
+          if (groupDoc?.memberIds?.length) {
+            groupMemberIds = (groupDoc.memberIds as any[]).map((id) => new Types.ObjectId(id));
+          }
+        } else if (before.studentId) {
+          const groupDoc = await Group.findOne(
+            { active: true, memberIds: before.studentId },
+            { _id: 1, memberIds: 1 }
+          ).lean();
+          if (groupDoc) {
+            effectiveGroupId = groupDoc._id as Types.ObjectId;
+            groupMemberIds = (groupDoc.memberIds as any[] | undefined)?.map((id) => new Types.ObjectId(id));
+            await Lesson.updateOne({ _id: before._id }, { $set: { groupId: effectiveGroupId } });
+            (doc as any).groupId = effectiveGroupId;
+          }
         }
 
-        await Lesson.updateMany(siblingMatch, { $set: sharedUpdate });
+        if (effectiveGroupId) {
+          if (!groupMemberIds || groupMemberIds.length === 0) {
+            await Lesson.updateMany(
+              {
+                _id: { $ne: doc._id },
+                type: "group",
+                groupId: effectiveGroupId,
+                start: startMatch,
+              },
+              { $set: sharedUpdate }
+            );
+          } else {
+            const otherMembers = groupMemberIds.filter(
+              (id) => !before.studentId || !id.equals(before.studentId as any)
+            );
+            if (otherMembers.length > 0) {
+              const siblingLessons = await fetchGroupLessonsForGroup({
+                group: { _id: effectiveGroupId, memberIds: groupMemberIds },
+                match: { start: startMatch },
+                limitToMembers: otherMembers,
+              });
+              const siblingIds = Array.from(
+                new Map(siblingLessons.map((l) => [String(l._id), l._id as any])).values()
+              );
+              if (siblingIds.length > 0) {
+                await Lesson.updateMany({ _id: { $in: siblingIds } }, { $set: sharedUpdate });
+              }
+            }
+          }
+        }
       }
     }
 
@@ -181,12 +223,40 @@ r.post("/generate-month", requireAuth(["admin"]), async (req, res) => {
       "defaultSlot.time": { $exists: true },
     }).lean();
 
+    const groups = await Group.find({ active: true }, { _id: 1, memberIds: 1 }).lean();
+    const membership = new Map<string, Types.ObjectId[]>();
+    for (const g of groups) {
+      for (const member of (g.memberIds as any[] | undefined) ?? []) {
+        const key = String(member);
+        const list = membership.get(key);
+        if (list) list.push(g._id as Types.ObjectId);
+        else membership.set(key, [g._id as Types.ObjectId]);
+      }
+    }
+
     let created = 0;
 
     for (const s of students) {
       const slot: any = (s as any).defaultSlot;
       if (!slot) continue;
       const [h, m] = String(slot.time).split(":").map(Number);
+
+      const studentId = s._id as Types.ObjectId;
+      const studentKey = String(studentId);
+      const isGroupProgram = (s as any).program === "Group";
+      let groupId: Types.ObjectId | undefined;
+
+      if (isGroupProgram) {
+        const groupIds = membership.get(studentKey) ?? [];
+        if (groupIds.length === 0) {
+          console.warn(`Skipping group lessons for ${(s as any).name || studentKey}: no active group membership`);
+          continue;
+        }
+        if (groupIds.length > 1) {
+          console.warn(`Student ${(s as any).name || studentKey} is in multiple groups; using ${groupIds[0].toString()}`);
+        }
+        groupId = groupIds[0];
+      }
 
       const firstOfMonth = new Date(year, month - 1, 1);
       const firstWeekday = new Date(firstOfMonth);
@@ -203,17 +273,34 @@ r.post("/generate-month", requireAuth(["admin"]), async (req, res) => {
         start.setHours(h, m, 0, 0);
         const end = new Date(start.getTime() + durationMinutes * 60000);
 
-        await Lesson.create({
-          studentId: s._id as any,
-          type: (s as any).program === "Group" ? "group" : "one",
+        const lessonType = groupId ? "group" : "one";
+        const baseDoc: any = {
+          studentId,
+          type: lessonType,
           start,
           end,
           status: "Scheduled",
-        })
-          .then(() => created++)
-          .catch((e) => {
-            if (e?.code !== 11000) throw e;
-          });
+        };
+        if (groupId) baseDoc.groupId = groupId;
+
+        const duplicateQuery: any = {
+          studentId,
+          type: lessonType,
+          start,
+          end,
+        };
+        if (groupId) {
+          duplicateQuery.$or = [
+            { groupId },
+            { groupId: { $exists: false } },
+          ];
+        }
+
+        const exists = await Lesson.findOne(duplicateQuery).lean();
+        if (exists) continue;
+
+        await Lesson.create(baseDoc);
+        created++;
       }
     }
 
@@ -225,7 +312,4 @@ r.post("/generate-month", requireAuth(["admin"]), async (req, res) => {
 });
 
 export default r;
-
-
-
 

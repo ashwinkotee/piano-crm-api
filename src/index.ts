@@ -3,7 +3,13 @@ import path from "path";
 import dotenv from "dotenv";
 import { createApp } from "./app";
 
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+const baseEnvPath = path.resolve(__dirname, "../.env");
+dotenv.config({ path: baseEnvPath });
+
+if (process.env.NODE_ENV === "development") {
+  const devEnvPath = path.resolve(__dirname, "../.env.development");
+  dotenv.config({ path: devEnvPath, override: true });
+}
 
 const app = createApp();
 
@@ -12,6 +18,7 @@ mongoose
   .connect(MONGO)
   .then(async () => {
     const db = mongoose.connection.db?.databaseName;
+    console.log("?o. Connected to MongoDB:", process.env.MONGO_URI);
     console.log("Mongo connected to DB:", db);
     const port = Number(process.env.PORT || 4000);
     app.listen(port, () => console.log(`API on :${port}`));
