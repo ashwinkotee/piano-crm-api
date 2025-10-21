@@ -9,6 +9,9 @@ export interface UserDoc extends Document {
   active: boolean;
   mustChangePassword: boolean;
   profile?: { name?: string };
+  preferences?: {
+    lessonReminders?: boolean;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,6 +26,9 @@ const UserSchema = new Schema<UserDoc>(
     mustChangePassword: { type: Boolean, default: false },
     profile: {
       name: { type: String },
+    },
+    preferences: {
+      lessonReminders: { type: Boolean, default: true },
     },
   },
   { timestamps: true }

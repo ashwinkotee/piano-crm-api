@@ -13,6 +13,7 @@ export interface StudentDoc extends Document {
   ageGroup?: AgeGroup;
   monthlyFee: number;
   active: boolean;
+  timezone?: string;
   // ?? link to portal user
   userId: Types.ObjectId;
   // Terms & Conditions acceptance
@@ -38,6 +39,7 @@ const StudentSchema = new Schema<StudentDoc>(
     ageGroup: { type: String, enum: ["6-9", "10-14", "15+"] },
     monthlyFee: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
+    timezone: { type: String },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     termsAccepted: { type: Boolean, default: false },
     termsAcceptedAt: { type: Date },

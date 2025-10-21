@@ -9,6 +9,8 @@ import studentsRoutes from "./routes/students.routes";
 import lessonsRoutes from "./routes/lessons.routes";
 import groupsRoutes from "./routes/groups.routes";
 import homeworkRoutes from "./routes/homework.routes";
+import notificationsRoutes from "./routes/notifications.routes";
+import remindersRoutes from "./routes/reminders.routes";
 
 // Build CORS allowlist from env (CLIENT_URL or ALLOWED_ORIGINS)
 function buildCors() {
@@ -94,6 +96,10 @@ export function createApp() {
   app.use("/students", studentsRoutes);
   app.use("/lessons", lessonsRoutes);
   app.use("/groups", groupsRoutes);
+  app.use("/notifications", notificationsRoutes);
+  app.use("/api/notifications", notificationsRoutes);
+  app.use("/reminders", remindersRoutes);
+  app.use("/api/reminders", remindersRoutes);
   app.use("/", homeworkRoutes);
 
   // Error handler (last)
